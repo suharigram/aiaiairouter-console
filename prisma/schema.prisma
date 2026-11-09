@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum TransactionType {
+  CREDIT
+  USAGE
+  REFUND
+  DISPUTE
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+  DISPUTED
+}
+
+enum UsageStatus {
+  COMPLETED
+  ABORTED
+  FAILED
+}
+
+model Profile {
+  id               String          @id @db.Uuid
+  email            String          @unique
+  name             String?
+  stripeCustomerId String?         @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  apiKeys          ApiKey[]
+  wallet           Wallet?
+  transactions     Transaction[]
+  usageEvents      UsageEvent[]
+  requestLogs      RequestLog[]
+  securityEvents   SecurityEvent[]
+  emailLogs        EmailLog[]
+  devices          UserDevice[]
+
+  @@map("profiles")
+}
+
+model ApiKey {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  name        String
+  prefix      String
+  keyHash     String       @unique @map("key_hash")
+  lastUsedAt  DateTime?    @map("last_used_at")
+  expiresAt   DateTime?    @map("expires_at")
+  revokedAt   DateTime?    @map("revoked_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  user        Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageEvents UsageEvent[]
+  requestLogs RequestLog[]
+
+  @@index([userId, createdAt])
+  @@map("api_keys")
+}
+
+model Provider {
+  id           String        @id @default(uuid()) @db.Uuid
+  slug         String        @unique
+  name         String
+  baseUrl      String        @map("base_url")
+  isEnabled    Boolean       @default(false) @map("is_enabled")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  models       Model[]
+  providerKeys ProviderKey[]
+
+  @@map("providers")
+}
+
+model ProviderKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  providerId   String    @map("provider_id") @db.Uuid
+  encryptedKey String    @map("encrypted_key")
+  keyVersion   Int       @default(1) @map("key_version")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  rotatedAt    DateTime? @map("rotated_at")
+  provider     Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_keys")
+}
+
+model Model {
+  id                          String       @id @default(uuid()) @db.Uuid
+  providerId                  String       @map("provider_id") @db.Uuid
+  slug                        String       @unique
+  providerModel               String       @map("provider_model")
+  displayName                 String       @map("display_name")
+  description                 String
+  contextLength               Int          @map("context_length")
+  inputMicrosPerMillion       BigInt       @map("input_micros_per_million")
+  outputMicrosPerMillion      BigInt       @map("output_micros_per_million")
+  cachedInputMicrosPerMillion BigInt?      @map("cached_input_micros_per_million")
+  supportsStreaming           Boolean      @default(true) @map("supports_streaming")
+  isActive                    Boolean      @default(true) @map("is_active")
+  createdAt                   DateTime     @default(now()) @map("created_at")
+  updatedAt                   DateTime     @updatedAt @map("updated_at")
+  provider                    Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  usageEvents                 UsageEvent[]
+
+  @@index([providerId, isActive])
+  @@map("models")
+}
+
+model Wallet {
+  userId        String   @id @map("user_id") @db.Uuid
+  balanceMicros BigInt   @default(0) @map("balance_micros")
+  version       Int      @default(1)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  user          Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id                      String            @id @default(uuid()) @db.Uuid
+  userId                  String            @map("user_id") @db.Uuid
+  type                    TransactionType
+  status                  TransactionStatus
+  amountMicros            BigInt            @map("amount_micros")
+  balanceAfterMicros      BigInt?           @map("balance_after_micros")
+  currency                String            @default("usd")
+  amountCents             Int?              @map("amount_cents")
+  stripeCheckoutSessionId String?           @unique @map("stripe_checkout_session_id")
+  stripePaymentIntentId   String?           @map("stripe_payment_intent_id")
+  externalRef             String?           @unique @map("external_ref")
+  description             String
+  metadata                Json?
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
+  user                    Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([stripePaymentIntentId])
+  @@map("transactions")
+}
+
+model UsageEvent {
+  id               String      @id @default(uuid()) @db.Uuid
+  requestId        String      @unique @map("request_id") @db.Uuid
+  userId           String      @map("user_id") @db.Uuid
+  apiKeyId         String      @map("api_key_id") @db.Uuid
+  modelId          String      @map("model_id") @db.Uuid
+  promptTokens     Int         @map("prompt_tokens")
+  completionTokens Int         @map("completion_tokens")
+  cachedTokens     Int         @default(0) @map("cached_tokens")
+  totalTokens      Int         @map("total_tokens")
+  costMicros       BigInt      @map("cost_micros")
+  usageSource      String      @default("provider") @map("usage_source")
+  status           UsageStatus
+  durationMs       Int         @map("duration_ms")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  user             Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey           ApiKey      @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  model            Model       @relation(fields: [modelId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([modelId, createdAt])
+  @@map("usage_events")
+}
+
+model RequestLog {
+  requestId    String   @id @map("request_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  apiKeyId     String?  @map("api_key_id") @db.Uuid
+  modelSlug    String   @map("model_slug")
+  providerSlug String?  @map("provider_slug")
+  statusCode   Int      @map("status_code")
+  latencyMs    Int      @map("latency_ms")
+  streamed     Boolean
+  errorCode    String?  @map("error_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+  user         Profile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey       ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("request_logs")
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  type      String
+  ipHash    String?  @map("ip_hash")
+  userAgent String?  @map("user_agent")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      Profile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("security_events")
+}
+
+model EmailLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  toEmail    String   @map("to_email")
+  template   String
+  providerId String?  @map("provider_id")
+  status     String
+  dedupeKey  String?  @unique @map("dedupe_key")
+  error      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("email_logs")
+}
+
+model WebhookEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  provider    String
+  eventId     String    @unique @map("event_id")
+  type        String
+  processedAt DateTime? @map("processed_at")
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("webhook_events")
+}
+
+model UserDevice {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  fingerprint String
+  ipHash      String   @map("ip_hash")
+  userAgent   String   @map("user_agent")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  user        Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, lastSeenAt])
+  @@map("user_devices")
+}
+
+model RateLimit {
+  key         String   @id
+  windowStart DateTime @map("window_start")
+  count       Int      @default(0)
+  expiresAt   DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("rate_limits")
+}

@@ -1,0 +1,32 @@
+ALTER TABLE "profiles" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "api_keys" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "providers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "provider_keys" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "models" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "wallets" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "transactions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "usage_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "request_logs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "security_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "email_logs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "webhook_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "user_devices" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "rate_limits" ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "profiles_select_own" ON "profiles" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "id");
+CREATE POLICY "profiles_update_own" ON "profiles" FOR UPDATE TO authenticated USING ((SELECT auth.uid()) = "id") WITH CHECK ((SELECT auth.uid()) = "id");
+CREATE POLICY "api_keys_select_own" ON "api_keys" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "wallets_select_own" ON "wallets" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "transactions_select_own" ON "transactions" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "usage_events_select_own" ON "usage_events" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "request_logs_select_own" ON "request_logs" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "security_events_select_own" ON "security_events" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "email_logs_select_own" ON "email_logs" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "user_devices_select_own" ON "user_devices" FOR SELECT TO authenticated USING ((SELECT auth.uid()) = "user_id");
+CREATE POLICY "providers_catalog_read" ON "providers" FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "models_catalog_read" ON "models" FOR SELECT TO anon, authenticated USING (true);
+
+REVOKE ALL ON "provider_keys" FROM anon, authenticated;
+REVOKE ALL ON "webhook_events" FROM anon, authenticated;
+REVOKE ALL ON "rate_limits" FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON "api_keys", "wallets", "transactions", "usage_events", "request_logs", "security_events", "email_logs", "user_devices" FROM anon, authenticated;
